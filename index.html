@@ -168,12 +168,67 @@ Layout:  [::] [P1] [(B2B)] [P2] [TIME] [X]
   display:flex;align-items:center;justify-content:center;
   border:none;background:transparent;
   cursor:pointer;flex-shrink:0;
-  margin-right:4px;margin-left:4px;
   border-radius:50%;
   color:var(--t3);font-size:16px;line-height:1;
   transition:background .1s,color .1s;
 }
 .s-clr:hover{background:var(--red-d);color:var(--red)}
+
+/* Pin button */
+.s-pin{
+  width:28px;height:28px;
+  display:flex;align-items:center;justify-content:center;
+  border:none;background:transparent;
+  cursor:pointer;flex-shrink:0;
+  border-radius:50%;
+  color:var(--t3);font-size:14px;line-height:1;
+  transition:color .15s;
+}
+.s-pin:hover{color:#ff9ec8}
+.s-pin.pinned{color:#ff9ec8;filter:drop-shadow(0 0 4px #ff4fa0)}
+
+/* Slot wrap */
+.slot-wrap{
+  position:relative;
+  margin-bottom:5px;
+  border-radius:9px;
+}
+/* Red circle behind slot — right side, slightly overflowing */
+/* Delete hint — dark red circle peeking from right edge, under slot */
+.slot-del-bg{
+  position:absolute;
+  right:-14px;
+  top:50%;
+  transform:translateY(-50%);
+  width:32px;
+  height:32px;
+  border-radius:50%;
+  background:rgba(140,15,15,0.55);
+  pointer-events:none;
+  z-index:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.slot-del-bg::after{
+  content:'×';
+  color:rgba(255,255,255,var(--x-opacity, 0));
+  font-size:14px;
+  font-weight:300;
+  line-height:1;
+}
+/* Slot card — sits above the red circle with shadow */
+.slot{
+  position:relative;
+  transition:transform .22s cubic-bezier(.4,0,.2,1);
+  border-radius:9px;
+  box-shadow:4px 0 14px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
+  z-index:1;
+}
+.slot.pinned-slot{
+  border:1px solid #ff4fa0;
+  box-shadow:0 0 0 1.5px #ff4fa0, 0 0 10px 1px rgba(255,79,160,.35), 4px 0 14px rgba(0,0,0,.55);
+}
 
 /* Settings fields */
 .sg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
@@ -338,7 +393,7 @@ function rebuild(){
   if(en<=st)en+=1440;
   const n=Math.floor((en-st)/sm);
   const old=slots.slice();
-  slots=Array.from({length:n},(_,i)=>({start:st+i*sm,b2b:old[i]?.b2b??true,perfs:old[i]?.perfs||[]}));
+  slots=Array.from({length:n},(_,i)=>({start:st+i*sm,b2b:old[i]?.b2b??true,pinned:old[i]?.pinned||false,perfs:old[i]?.perfs||[]}));
   syncCurToEvent();
   rSlots();rPool();
 }
@@ -472,58 +527,165 @@ function rSlots(){
     if(h)h.addEventListener('touchstart',e=>tSlotStart(e,i),{passive:false});
     const el=document.getElementById('slot-'+i);
     if(el)el.querySelectorAll('.sc').forEach(c=>c.addEventListener('touchstart',e=>tPerfStart(e,c.dataset.p,c,false),{passive:false}));
+    // swipe-to-delete
+    attachSwipeDel(i);
   });
   updProg();
+}
+
+function attachSwipeDel(i){
+  const slotEl=document.getElementById('slot-'+i);
+  const wrapEl=document.getElementById('wrap-'+i);
+  const bgEl=document.getElementById('delbg-'+i);
+  if(!slotEl||!wrapEl||!bgEl)return;
+
+  function setProgress(p){
+    const alpha=0.45+p*0.45;
+    bgEl.style.background=`rgba(140,15,15,${alpha.toFixed(2)})`;
+    const xOpacity=Math.max(0,(p-0.4)/0.6).toFixed(2);
+    bgEl.style.setProperty('--x-opacity', xOpacity);
+  }
+  function reset(){
+    slotEl.style.transition='transform .22s cubic-bezier(.4,0,.2,1)';
+    slotEl.style.transform='';
+    setProgress(0);
+  }
+
+  const FULL=-80; // スワイプ完了のpx
+
+  // Touch
+  let tx0=null,swiped=false;
+  slotEl.addEventListener('touchstart',e=>{
+    if(e.target.closest('.sh,.sc,.b2b-btn,.s-pin'))return;
+    tx0=e.touches[0].clientX;swiped=false;
+    slotEl.style.transition='none';
+  },{passive:true});
+  slotEl.addEventListener('touchmove',e=>{
+    if(tx0===null)return;
+    const dx=e.touches[0].clientX-tx0;
+    if(dx<-8){
+      swiped=true;
+      const shift=Math.max(dx,FULL);
+      slotEl.style.transform=`translateX(${shift}px)`;
+      setProgress(Math.min(1,Math.abs(shift)/Math.abs(FULL)));
+    } else if(dx>4&&swiped){
+      reset();swiped=false;
+    }
+  },{passive:true});
+  slotEl.addEventListener('touchend',e=>{
+    if(!swiped){tx0=null;return;}
+    const dx=e.changedTouches[0].clientX-tx0;
+    if(dx<=FULL*0.75){
+      // 削除確定
+      slotEl.style.transition='transform .18s ease-in';
+      slotEl.style.transform='translateX(-110%)';
+      setTimeout(()=>clrSlot(i),170);
+    } else {
+      reset();
+    }
+    tx0=null;swiped=false;
+  },{passive:true});
+
+  // Mouse
+  let mx0=null,mSwiped=false;
+  slotEl.addEventListener('mousedown',e=>{
+    if(e.target.closest('.sh,.sc,.b2b-btn,.s-pin'))return;
+    mx0=e.clientX;mSwiped=false;
+    slotEl.style.transition='none';
+  });
+  const onMMove=e=>{
+    if(mx0===null)return;
+    const dx=e.clientX-mx0;
+    if(dx<-8){
+      mSwiped=true;
+      const shift=Math.max(dx,FULL);
+      slotEl.style.transform=`translateX(${shift}px)`;
+      setProgress(Math.min(1,Math.abs(shift)/Math.abs(FULL)));
+    } else if(dx>4&&mSwiped){reset();mSwiped=false;}
+  };
+  const onMUp=e=>{
+    if(mx0===null)return;
+    const dx=e.clientX-mx0;
+    if(mSwiped&&dx<=FULL*0.75){
+      slotEl.style.transition='transform .18s ease-in';
+      slotEl.style.transform='translateX(-110%)';
+      setTimeout(()=>clrSlot(i),170);
+    } else {
+      reset();
+    }
+    mx0=null;mSwiped=false;
+    window.removeEventListener('mousemove',onMMove);
+    window.removeEventListener('mouseup',onMUp);
+  };
+  slotEl.addEventListener('mousedown',()=>{
+    window.addEventListener('mousemove',onMMove);
+    window.addEventListener('mouseup',onMUp);
+  });
+
+  // 初期状態
+  setProgress(0);
 }
 
 function slotHTML(s,i){
   const p0=s.perfs[0]||null;
   const p1=s.perfs[1]||null;
   const b2bOn=s.b2b?'on':'';
-  const hasClear=s.perfs.length>0;
+  const pinCls=s.pinned?'pinned':'';
   let perfSection='';
+  const draggable=s.pinned?'false':'true';
   if(!p0){
     perfSection=`<span class="s-empty">ドロップして割当</span>`;
   } else {
     const d0=trunc(p0);
-    perfSection=`<div class="sc" draggable="true" data-p="${p0}" data-si="${i}" ondragstart="dPerfStart(event,'${p0}',false,${i})" ondragend="dPerfEnd()" title="${p0}">${d0}</div>`;
+    perfSection=`<div class="sc" draggable="${draggable}" data-p="${p0}" data-si="${i}" ondragstart="dPerfStart(event,'${p0}',false,${i})" ondragend="dPerfEnd()" title="${p0}" style="${s.pinned?'cursor:default;opacity:.7':''}">${d0}</div>`;
     perfSection+=`<button class="b2b-btn ${b2bOn}" onclick="togB2B(${i})" title="B2B切替">B2B</button>`;
     if(s.b2b){
       if(p1){
         const d1=trunc(p1);
-        perfSection+=`<div class="sc" draggable="true" data-p="${p1}" data-si="${i}" ondragstart="dPerfStart(event,'${p1}',false,${i})" ondragend="dPerfEnd()" title="${p1}">${d1}</div>`;
+        perfSection+=`<div class="sc" draggable="${draggable}" data-p="${p1}" data-si="${i}" ondragstart="dPerfStart(event,'${p1}',false,${i})" ondragend="dPerfEnd()" title="${p1}" style="${s.pinned?'cursor:default;opacity:.7':''}">${d1}</div>`;
       } else {
         perfSection+=`<span class="s-empty" style="font-size:11px">+1人</span>`;
       }
     }
   }
-  return`<div class="slot" id="slot-${i}"
-    ondragover="dSlotOver(event,${i})"
-    ondrop="dSlotDrop(event,${i})"
-    ondragleave="dSlotLeave(event,${i})">
-    <div class="sh" id="sh-${i}" draggable="true"
-      ondragstart="dSlotStart(event,${i})"
-      ondragend="dSlotEnd()">⠿</div>
-    <div class="si">
-      <span class="s-time">${ft(s.start)}<span class="s-time-tilde">〜</span></span>
-      <div class="si-perfs">${perfSection}</div>
+  const pinnedCls=s.pinned?'pinned-slot':'';
+  return`<div class="slot-wrap" id="wrap-${i}">
+    <div class="slot-del-bg" id="delbg-${i}"></div>
+    <div class="slot ${pinnedCls}" id="slot-${i}"
+      ondragover="dSlotOver(event,${i})"
+      ondrop="dSlotDrop(event,${i})"
+      ondragleave="dSlotLeave(event,${i})">
+      <div class="sh" id="sh-${i}" draggable="true"
+        ondragstart="dSlotStart(event,${i})"
+        ondragend="dSlotEnd()">⠿</div>
+      <div class="si">
+        <span class="s-time">${ft(s.start)}<span class="s-time-tilde">〜</span></span>
+        <div class="si-perfs">${perfSection}</div>
+      </div>
+      <button class="s-pin ${pinCls}" onclick="togPin(${i})" title="ピン止め">📌</button>
     </div>
-    ${hasClear?`<button class="s-clr" onclick="clrSlot(${i})" title="クリア">×</button>`:'<span style="width:36px;flex-shrink:0"></span>'}
   </div>`;
 }
 
-function togB2B(i){
-  slots[i].b2b=!slots[i].b2b;
-  if(!slots[i].b2b&&slots[i].perfs.length>1)slots[i].perfs=slots[i].perfs.slice(0,1);
-  syncCurToEvent();rSlots();rPool();
+function togPin(i){
+  slots[i].pinned=!slots[i].pinned;
+  syncCurToEvent();rSlots();
 }
 function clrSlot(i){slots[i].perfs=[];syncCurToEvent();rSlots();rPool();}
-function clrAll(){slots.forEach(s=>s.perfs=[]);syncCurToEvent();rSlots();rPool();}
+function clrAll(){slots.forEach(s=>{if(!s.pinned)s.perfs=[];});syncCurToEvent();rSlots();rPool();}
 function rndAll(){
   const names=[...perfs];
   for(let i=names.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[names[i],names[j]]=[names[j],names[i]];}
+  // ピン済みの演者を除外してから配布
+  const pinned=new Set(slots.filter(s=>s.pinned).flatMap(s=>s.perfs));
+  const avail=names.filter(n=>!pinned.has(n));
   let idx=0;
-  slots.forEach(s=>{const n=s.b2b?2:1;s.perfs=names.slice(idx,idx+n).filter(Boolean);idx+=n;});
+  slots.forEach(s=>{
+    if(s.pinned)return;
+    const n=s.b2b?2:1;
+    s.perfs=avail.slice(idx,idx+n).filter(Boolean);
+    idx+=n;
+  });
   syncCurToEvent();rSlots();rPool();
 }
 
@@ -575,6 +737,7 @@ function dSlotDrop(e,i){
     dP=null;return;
   }
   if(dSI!==null&&dSI!==i){
+    if(slots[dSI].pinned||slots[i].pinned){dSI=null;return;} // ピン止め枠は移動不可
     const tmpPerfs=slots[dSI].perfs; const tmpB2b=slots[dSI].b2b;
     slots[dSI].perfs=slots[i].perfs; slots[dSI].b2b=slots[i].b2b;
     slots[i].perfs=tmpPerfs; slots[i].b2b=tmpB2b;
@@ -582,13 +745,18 @@ function dSlotDrop(e,i){
   }
 }
 function assignP(name,fromSI,toSI){
+  if(slots[toSI].pinned)return; // ピン止め枠には割当不可
   const max=slots[toSI].b2b?2:1;
   if(slots[toSI].perfs.includes(name)||slots[toSI].perfs.length>=max)return;
-  if(fromSI!==null)slots[fromSI].perfs=slots[fromSI].perfs.filter(p=>p!==name);
+  if(fromSI!==null&&!slots[fromSI].pinned)slots[fromSI].perfs=slots[fromSI].perfs.filter(p=>p!==name);
+  else if(fromSI!==null&&slots[fromSI].pinned)return; // ピン止め元からも抜けない
   slots[toSI].perfs.push(name);
   syncCurToEvent();rSlots();rPool();
 }
 function swapP(nameA,siA,nameB,siB){
+  // どちらかがピン止めなら無効
+  if(siA!==null&&slots[siA].pinned)return;
+  if(slots[siB].pinned)return;
   if(siA===null){
     const ib=slots[siB].perfs.indexOf(nameB);
     if(ib>=0)slots[siB].perfs[ib]=nameA;
@@ -615,6 +783,8 @@ function mkG(el){
 function rmG(){if(tGhost){tGhost.remove();tGhost=null;}}
 function mvG(x,y){if(tGhost){tGhost.style.left=(x-55)+'px';tGhost.style.top=(y-16)+'px';}}
 function tPerfStart(e,name,chip,fromPool){
+  const si=fromPool?null:parseInt(chip.dataset.si??'-1');
+  if(!fromPool&&si!==null&&si>=0&&slots[si]?.pinned)return; // ピン止め枠からは操作不可
   e.preventDefault();tP=name;tPPool=fromPool;
   tPSI=fromPool?null:parseInt(chip.dataset.si??'-1');
   if(tPSI===-1)tPSI=null;
@@ -662,6 +832,7 @@ function tSlotEnd(e){
   if(s&&tSI!==null){
     const j=parseInt(s.id.replace('slot-',''));
     if(!isNaN(j)&&j!==tSI){
+      if(slots[tSI].pinned||slots[j].pinned){tSI=null;return;}
       const tmpPerfs=slots[tSI].perfs; const tmpB2b=slots[tSI].b2b;
       slots[tSI].perfs=slots[j].perfs; slots[tSI].b2b=slots[j].b2b;
       slots[j].perfs=tmpPerfs; slots[j].b2b=tmpB2b;
