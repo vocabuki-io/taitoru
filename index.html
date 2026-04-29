@@ -983,11 +983,38 @@ async function gistSave(){
 async function gistLoad(){
   const token=getToken();
   if(!token){setSyncStatus('トークン未設定','var(--red)');return;}
-  const storedId=getGistId();
-  if(!storedId){setSyncStatus('Gist IDなし — 先に保存してください','var(--red)');setTimeout(()=>setSyncStatus(''),3000);return;}
   setSyncStatus('読込中...');
   try{
-    const res=await fetch(`https://api.github.com/gists/${storedId}`,{
+    let gistId=getGistId();
+
+    // GistIDが未保存の場合はトークンでGist一覧を検索して自動特定
+    if(!gistId){
+      setSyncStatus('Gistを検索中...');
+      let page=1;
+      outer:
+      while(page<=5){
+        const listRes=await fetch(`https://api.github.com/gists?per_page=30&page=${page}`,{
+          headers:{'Authorization':`token ${token}`}
+        });
+        const list=await listRes.json();
+        if(!Array.isArray(list)||!list.length)break;
+        for(const g of list){
+          if(g.files&&g.files[GIST_FILENAME]){
+            gistId=g.id;
+            setGistId(gistId);
+            break outer;
+          }
+        }
+        page++;
+      }
+    }
+
+    if(!gistId){
+      setSyncStatus('データなし — まず保存してください','var(--red)');
+      setTimeout(()=>setSyncStatus(''),3000);return;
+    }
+
+    const res=await fetch(`https://api.github.com/gists/${gistId}`,{
       headers:{'Authorization':`token ${token}`}
     });
     const data=await res.json();
