@@ -247,7 +247,19 @@ Layout:  [::] [P1] [(B2B)] [P2] [TIME] [X]
 /* Output */
 .out-box{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:13px;font-family:var(--mono);font-size:13px;line-height:2.1;white-space:pre;overflow-x:auto;margin-bottom:11px}
 .cp-btn{width:100%;padding:12px;background:var(--acc);color:#000;border:none;border-radius:8px;font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.08em;cursor:pointer}
-.cp-btn:active{opacity:.8}
+.btn:disabled{opacity:.3;cursor:default;}
+.btn:disabled:hover{background:transparent;}
+/* 未保存インジケーター — 💾ボタンにオレンジドット */
+.save-dirty::after{
+  content:'';
+  position:absolute;
+  top:2px;right:2px;
+  width:6px;height:6px;
+  border-radius:50%;
+  background:#ff9500;
+  pointer-events:none;
+}
+#saveBtn{position:relative;display:inline-flex;}
 
 /* Saved events list */
 .ev-card{display:flex;align-items:center;gap:8px;padding:11px 12px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;margin-bottom:6px;cursor:pointer;transition:border-color .12s,background .12s}
@@ -269,7 +281,7 @@ Layout:  [::] [P1] [(B2B)] [P2] [TIME] [X]
   <span class="ev-name" id="evName">—</span>
   <span id="syncStatus" style="font-family:var(--mono);font-size:10px;color:var(--t2);margin-right:4px"></span>
   <button onclick="gistLoad()" style="padding:4px 8px;border:1px solid var(--b2);border-radius:5px;background:transparent;color:var(--t2);font-family:var(--mono);font-size:14px;cursor:pointer;flex-shrink:0;line-height:1" title="Gistから読込">↻</button>
-  <button onclick="gistSave()" style="padding:4px 8px;border:1px solid var(--b2);border-radius:5px;background:transparent;color:var(--t2);font-family:var(--mono);font-size:14px;cursor:pointer;flex-shrink:0;line-height:1" title="Gistに保存">💾</button>
+  <button id="saveBtn" onclick="gistSave()" style="padding:4px 8px;border:1px solid var(--b2);border-radius:5px;background:transparent;color:var(--t2);font-family:var(--mono);font-size:14px;cursor:pointer;flex-shrink:0;line-height:1;position:relative" title="Gistに保存">💾</button>
   <button onclick="openSyncPanel()" style="padding:4px 8px;border:1px solid var(--b2);border-radius:5px;background:transparent;color:var(--t2);font-family:var(--mono);font-size:10px;cursor:pointer;flex-shrink:0" title="設定">⚙</button>
 </div>
 
@@ -310,6 +322,8 @@ Layout:  [::] [P1] [(B2B)] [P2] [TIME] [X]
   <div class="arow">
     <button class="btn btn-a" onclick="rndAll()">ランダム</button>
     <button class="btn" onclick="clrAll()">全クリア</button>
+    <button class="btn" id="undoBtn" onclick="undoSlots()" title="元に戻す" disabled>↩</button>
+    <button class="btn" id="redoBtn" onclick="redoSlots()" title="やり直す" disabled>↪</button>
   </div>
   <div class="prow">
     <span class="plbl" id="plbl">—</span>
@@ -363,6 +377,54 @@ const pt=s=>{const[h,m]=s.split(':').map(Number);return h*60+m;};
 const ft=m=>{const t=((m%1440)+1440)%1440;return`${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`;};
 const uid=()=>Math.random().toString(36).slice(2,9);
 
+/* ---- Undo / Redo ---- */
+const HISTORY_MAX=5;
+let undoStack=[];  // [{slots snapshot}]
+let redoStack=[];
+let isDirty=false;
+
+function snapshotSlots(){
+  return slots.map(s=>({...s,perfs:[...s.perfs]}));
+}
+
+function pushHistory(){
+  undoStack.push(snapshotSlots());
+  if(undoStack.length>HISTORY_MAX)undoStack.shift();
+  redoStack=[];
+  setDirty(true);
+  updUndoRedo();
+}
+
+function updUndoRedo(){
+  const u=document.getElementById('undoBtn');
+  const r=document.getElementById('redoBtn');
+  if(u)u.disabled=undoStack.length===0;
+  if(r)r.disabled=redoStack.length===0;
+}
+
+function undoSlots(){
+  if(!undoStack.length)return;
+  redoStack.push(snapshotSlots());
+  slots=undoStack.pop();
+  syncCurToEvent();rSlots();rPool();updUndoRedo();
+  setDirty(true);
+}
+
+function redoSlots(){
+  if(!redoStack.length)return;
+  undoStack.push(snapshotSlots());
+  slots=redoStack.pop();
+  syncCurToEvent();rSlots();rPool();updUndoRedo();
+  setDirty(true);
+}
+
+function setDirty(v){
+  isDirty=v;
+  const btn=document.getElementById('saveBtn');
+  if(btn)btn.classList.toggle('save-dirty',v);
+}
+
+/* ---- State snapshot helpers ---- */
 function updHdr(){document.getElementById('evName').textContent=document.getElementById('sName').value.trim()||'—';}
 
 function syncCurToEvent(){
@@ -383,6 +445,7 @@ function loadEventIntoUI(ev){
   document.getElementById('sStart').value=ev.start;
   document.getElementById('sEnd').value=ev.end;
   document.getElementById('sMin').value=ev.slotMin;
+  undoStack=[];redoStack=[];setDirty(false);updUndoRedo();
   updHdr();rSlots();rPool();
 }
 
@@ -669,14 +732,20 @@ function slotHTML(s,i){
 
 function togPin(i){
   slots[i].pinned=!slots[i].pinned;
-  syncCurToEvent();rSlots();
+  syncCurToEvent();rSlots();setDirty(true);
 }
-function clrSlot(i){slots[i].perfs=[];syncCurToEvent();rSlots();rPool();}
-function clrAll(){slots.forEach(s=>{if(!s.pinned)s.perfs=[];});syncCurToEvent();rSlots();rPool();}
+function togB2B(i){
+  pushHistory();
+  slots[i].b2b=!slots[i].b2b;
+  if(!slots[i].b2b&&slots[i].perfs.length>1)slots[i].perfs=slots[i].perfs.slice(0,1);
+  syncCurToEvent();rSlots();rPool();
+}
+function clrSlot(i){pushHistory();slots[i].perfs=[];syncCurToEvent();rSlots();rPool();}
+function clrAll(){pushHistory();slots.forEach(s=>{if(!s.pinned)s.perfs=[];});syncCurToEvent();rSlots();rPool();}
 function rndAll(){
+  pushHistory();
   const names=[...perfs];
   for(let i=names.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[names[i],names[j]]=[names[j],names[i]];}
-  // ピン済みの演者を除外してから配布
   const pinned=new Set(slots.filter(s=>s.pinned).flatMap(s=>s.perfs));
   const avail=names.filter(n=>!pinned.has(n));
   let idx=0;
@@ -737,7 +806,8 @@ function dSlotDrop(e,i){
     dP=null;return;
   }
   if(dSI!==null&&dSI!==i){
-    if(slots[dSI].pinned||slots[i].pinned){dSI=null;return;} // ピン止め枠は移動不可
+    if(slots[dSI].pinned||slots[i].pinned){dSI=null;return;}
+    pushHistory();
     const tmpPerfs=slots[dSI].perfs; const tmpB2b=slots[dSI].b2b;
     slots[dSI].perfs=slots[i].perfs; slots[dSI].b2b=slots[i].b2b;
     slots[i].perfs=tmpPerfs; slots[i].b2b=tmpB2b;
@@ -745,18 +815,19 @@ function dSlotDrop(e,i){
   }
 }
 function assignP(name,fromSI,toSI){
-  if(slots[toSI].pinned)return; // ピン止め枠には割当不可
+  if(slots[toSI].pinned)return;
   const max=slots[toSI].b2b?2:1;
   if(slots[toSI].perfs.includes(name)||slots[toSI].perfs.length>=max)return;
-  if(fromSI!==null&&!slots[fromSI].pinned)slots[fromSI].perfs=slots[fromSI].perfs.filter(p=>p!==name);
-  else if(fromSI!==null&&slots[fromSI].pinned)return; // ピン止め元からも抜けない
+  if(fromSI!==null&&slots[fromSI].pinned)return;
+  pushHistory();
+  if(fromSI!==null)slots[fromSI].perfs=slots[fromSI].perfs.filter(p=>p!==name);
   slots[toSI].perfs.push(name);
   syncCurToEvent();rSlots();rPool();
 }
 function swapP(nameA,siA,nameB,siB){
-  // どちらかがピン止めなら無効
   if(siA!==null&&slots[siA].pinned)return;
   if(slots[siB].pinned)return;
+  pushHistory();
   if(siA===null){
     const ib=slots[siB].perfs.indexOf(nameB);
     if(ib>=0)slots[siB].perfs[ib]=nameA;
@@ -833,6 +904,7 @@ function tSlotEnd(e){
     const j=parseInt(s.id.replace('slot-',''));
     if(!isNaN(j)&&j!==tSI){
       if(slots[tSI].pinned||slots[j].pinned){tSI=null;return;}
+      pushHistory();
       const tmpPerfs=slots[tSI].perfs; const tmpB2b=slots[tSI].b2b;
       slots[tSI].perfs=slots[j].perfs; slots[tSI].b2b=slots[j].b2b;
       slots[j].perfs=tmpPerfs; slots[j].b2b=tmpB2b;
@@ -902,7 +974,7 @@ async function gistSave(){
       });
     }
     data=await res.json();
-    if(data.id){setGistId(data.id);setSyncStatus('✓ 保存しました','var(--acc)');}
+    if(data.id){setGistId(data.id);setSyncStatus('✓ 保存しました','var(--acc)');setDirty(false);}
     else setSyncStatus('保存失敗: '+(data.message||'不明'),'var(--red)');
   }catch(e){setSyncStatus('保存失敗: '+e.message,'var(--red)');}
   setTimeout(()=>setSyncStatus(''),3000);
