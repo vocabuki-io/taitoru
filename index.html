@@ -954,6 +954,7 @@ function setSyncStatus(msg,color){
 async function gistSave(){
   const token=getToken();
   if(!token){setSyncStatus('トークン未設定',`var(--red)`);return;}
+  syncCurToEvent(); // 編集中データを必ずeventに反映してから保存
   setSyncStatus('保存中...');
   const payload=JSON.stringify({events},null,0);
   try{
@@ -1018,16 +1019,37 @@ async function gistLoad(){
       headers:{'Authorization':`token ${token}`}
     });
     const data=await res.json();
-    const content=data.files?.[GIST_FILENAME]?.content;
+    // Gistからコンテンツを取得（truncatedの場合はraw_urlから再取得）
+    let content=data.files?.[GIST_FILENAME]?.content;
+    if(!content&&data.files?.[GIST_FILENAME]?.truncated){
+      const rawRes=await fetch(data.files[GIST_FILENAME].raw_url,{
+        headers:{'Authorization':`token ${token}`}
+      });
+      content=await rawRes.text();
+    }
     if(!content){setSyncStatus('データなし','var(--red)');setTimeout(()=>setSyncStatus(''),3000);return;}
     const parsed=JSON.parse(content);
-    if(parsed.events){
-      events=parsed.events;
+    if(parsed.events&&Array.isArray(parsed.events)){
+      // slotデータにデフォルト値を補完（古いデータとの互換性）
+      events=parsed.events.map(ev=>({
+        ...ev,
+        perfs:ev.perfs||[],
+        slots:(ev.slots||[]).map(s=>({
+          start:s.start||0,
+          end:s.end||(s.start+30),
+          b2b:s.b2b??true,
+          pinned:s.pinned||false,
+          perfs:s.perfs||[]
+        }))
+      }));
       curEvId=null;perfs=[];slots=[];
       document.getElementById('sName').value='';
       document.getElementById('evName').textContent='—';
+      undoStack=[];redoStack=[];setDirty(false);updUndoRedo();
       rEvList();goTab('list');
       setSyncStatus('✓ 読み込みました','var(--acc)');
+    } else {
+      setSyncStatus('データ形式エラー','var(--red)');
     }
   }catch(e){setSyncStatus('読込失敗: '+e.message,'var(--red)');}
   setTimeout(()=>setSyncStatus(''),3000);
@@ -1040,10 +1062,14 @@ function openSyncPanel(){
 }
 function closeSyncPanel(){document.getElementById('syncPanel').style.display='none';}
 function saveToken(){
-  setToken(document.getElementById('tokenInput').value);
+  const val=document.getElementById('tokenInput').value.trim();
+  if(!val)return;
+  // トークンが変わったらGistIDをリセット（別アカウント対応）
+  if(val!==getToken())localStorage.removeItem('taitoru_gist_id');
+  setToken(val);
   closeSyncPanel();
-  setSyncStatus('トークン保存済み','var(--acc)');
-  setTimeout(()=>setSyncStatus(''),2000);
+  setSyncStatus('トークン保存 — 読込中...');
+  gistLoad();
 }
 
 /* ---- Init ---- */
