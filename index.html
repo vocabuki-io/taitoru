@@ -960,7 +960,7 @@ async function gistSave(){
   try{
     let res,data;
     const storedId=getGistId();
-    const body={description:'taitoru data',public:false,files:{[GIST_FILENAME]:{content:payload}}};
+    const body={description:'taitoru-sync',public:false,files:{[GIST_FILENAME]:{content:payload}}};
     if(storedId){
       res=await fetch(`https://api.github.com/gists/${storedId}`,{
         method:'PATCH',
@@ -991,22 +991,20 @@ async function gistLoad(){
     // GistIDが未保存の場合はトークンでGist一覧を検索して自動特定
     if(!gistId){
       setSyncStatus('Gistを検索中...');
-      let page=1;
-      outer:
-      while(page<=5){
-        const listRes=await fetch(`https://api.github.com/gists?per_page=30&page=${page}`,{
-          headers:{'Authorization':`token ${token}`}
-        });
-        const list=await listRes.json();
-        if(!Array.isArray(list)||!list.length)break;
-        for(const g of list){
-          if(g.files&&g.files[GIST_FILENAME]){
-            gistId=g.id;
-            setGistId(gistId);
-            break outer;
-          }
+      // updated_atで降順ソート → 最新のtaitoru-data.jsonを取得
+      const listRes=await fetch(`https://api.github.com/gists?per_page=100`,{
+        headers:{'Authorization':`token ${token}`}
+      });
+      const list=await listRes.json();
+      if(Array.isArray(list)){
+        // taitoru-data.jsonを含むGistを全部抽出し、更新日時が新しい順に並べる
+        const candidates=list
+          .filter(g=>g.files&&g.files[GIST_FILENAME])
+          .sort((a,b)=>new Date(b.updated_at)-new Date(a.updated_at));
+        if(candidates.length>0){
+          gistId=candidates[0].id;
+          setGistId(gistId);
         }
-        page++;
       }
     }
 
