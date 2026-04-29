@@ -212,6 +212,23 @@ Layout:  [::] [P1] [(B2B)] [P2] [TIME] [X]
 <div class="hdr">
   <span class="logo">TAITORU</span>
   <span class="ev-name" id="evName">—</span>
+  <span id="syncStatus" style="font-family:var(--mono);font-size:10px;color:var(--t2);margin-right:4px"></span>
+  <button onclick="gistLoad()" style="padding:4px 8px;border:1px solid var(--b2);border-radius:5px;background:transparent;color:var(--t2);font-family:var(--mono);font-size:14px;cursor:pointer;flex-shrink:0;line-height:1" title="Gistから読込">↻</button>
+  <button onclick="gistSave()" style="padding:4px 8px;border:1px solid var(--b2);border-radius:5px;background:transparent;color:var(--t2);font-family:var(--mono);font-size:14px;cursor:pointer;flex-shrink:0;line-height:1" title="Gistに保存">💾</button>
+  <button onclick="openSyncPanel()" style="padding:4px 8px;border:1px solid var(--b2);border-radius:5px;background:transparent;color:var(--t2);font-family:var(--mono);font-size:10px;cursor:pointer;flex-shrink:0" title="設定">⚙</button>
+</div>
+
+<!-- Sync Panel -->
+<div id="syncPanel" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:999">
+  <div style="background:var(--s1);border:1px solid var(--b2);border-radius:12px;padding:20px;width:320px;margin:auto;position:relative;top:50%;transform:translateY(-50%)">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--t3);letter-spacing:.1em;margin-bottom:10px">GITHUB TOKEN</div>
+    <input id="tokenInput" type="password" placeholder="ghp_xxxxxxxxxxxx" style="width:100%;font-size:13px;padding:8px 10px;border:1px solid var(--b2);border-radius:6px;background:var(--bg);color:var(--t1);font-family:var(--mono);margin-bottom:8px">
+    <div style="font-size:11px;color:var(--t3);margin-bottom:14px;line-height:1.6">gistスコープのみのPersonal Access Tokenを入力。このデバイスのlocalStorageにのみ保存されます。</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="closeSyncPanel()" style="padding:7px 14px;border:1px solid var(--b2);border-radius:6px;background:transparent;color:var(--t2);font-family:var(--mono);font-size:12px;cursor:pointer">キャンセル</button>
+      <button onclick="saveToken()" style="padding:7px 14px;border:1px solid var(--acc);border-radius:6px;background:var(--acc-d);color:var(--acc);font-family:var(--mono);font-size:12px;cursor:pointer">保存</button>
+    </div>
+  </div>
 </div>
 <div class="tabs">
   <div class="tab on" onclick="goTab('list')">イベント</div>
@@ -677,8 +694,89 @@ function cpOut(){
   });
 }
 
+/* ---- Gist Sync ---- */
+const GIST_FILENAME='taitoru-data.json';
+let gistId=null;
+
+function getToken(){return localStorage.getItem('taitoru_token')||'';}
+function setToken(t){localStorage.setItem('taitoru_token',t.trim());}
+function getGistId(){return localStorage.getItem('taitoru_gist_id')||'';}
+function setGistId(id){localStorage.setItem('taitoru_gist_id',id);}
+
+function setSyncStatus(msg,color){
+  const el=document.getElementById('syncStatus');
+  if(el){el.textContent=msg;el.style.color=color||'var(--t2)';}
+}
+
+async function gistSave(){
+  const token=getToken();
+  if(!token){setSyncStatus('トークン未設定',`var(--red)`);return;}
+  setSyncStatus('保存中...');
+  const payload=JSON.stringify({events},null,0);
+  try{
+    let res,data;
+    const storedId=getGistId();
+    const body={description:'taitoru data',public:false,files:{[GIST_FILENAME]:{content:payload}}};
+    if(storedId){
+      res=await fetch(`https://api.github.com/gists/${storedId}`,{
+        method:'PATCH',
+        headers:{'Authorization':`token ${token}`,'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      });
+    } else {
+      res=await fetch('https://api.github.com/gists',{
+        method:'POST',
+        headers:{'Authorization':`token ${token}`,'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      });
+    }
+    data=await res.json();
+    if(data.id){setGistId(data.id);setSyncStatus('✓ 保存しました','var(--acc)');}
+    else setSyncStatus('保存失敗: '+(data.message||'不明'),'var(--red)');
+  }catch(e){setSyncStatus('保存失敗: '+e.message,'var(--red)');}
+  setTimeout(()=>setSyncStatus(''),3000);
+}
+
+async function gistLoad(){
+  const token=getToken();
+  if(!token){setSyncStatus('トークン未設定','var(--red)');return;}
+  const storedId=getGistId();
+  if(!storedId){setSyncStatus('Gist IDなし — 先に保存してください','var(--red)');setTimeout(()=>setSyncStatus(''),3000);return;}
+  setSyncStatus('読込中...');
+  try{
+    const res=await fetch(`https://api.github.com/gists/${storedId}`,{
+      headers:{'Authorization':`token ${token}`}
+    });
+    const data=await res.json();
+    const content=data.files?.[GIST_FILENAME]?.content;
+    if(!content){setSyncStatus('データなし','var(--red)');setTimeout(()=>setSyncStatus(''),3000);return;}
+    const parsed=JSON.parse(content);
+    if(parsed.events){
+      events=parsed.events;
+      curEvId=null;perfs=[];slots=[];
+      document.getElementById('sName').value='';
+      document.getElementById('evName').textContent='—';
+      rEvList();goTab('list');
+      setSyncStatus('✓ 読み込みました','var(--acc)');
+    }
+  }catch(e){setSyncStatus('読込失敗: '+e.message,'var(--red)');}
+  setTimeout(()=>setSyncStatus(''),3000);
+}
+
+function openSyncPanel(){
+  const p=document.getElementById('syncPanel');
+  p.style.display='flex';p.style.alignItems='center';p.style.justifyContent='center';
+  document.getElementById('tokenInput').value=getToken();
+}
+function closeSyncPanel(){document.getElementById('syncPanel').style.display='none';}
+function saveToken(){
+  setToken(document.getElementById('tokenInput').value);
+  closeSyncPanel();
+  setSyncStatus('トークン保存済み','var(--acc)');
+  setTimeout(()=>setSyncStatus(''),2000);
+}
+
 /* ---- Init ---- */
-// 決起酒会をデフォルトで1件作成
 (function(){
   const ev={
     id:uid(),name:'決起酒会 GW',
@@ -691,6 +789,12 @@ function cpOut(){
   ev.slots=Array.from({length:n},(_,i)=>({start:st+i*ev.slotMin,b2b:true,perfs:[]}));
   events.push(ev);
   rEvList();
+  // トークン未設定なら即パネル表示、あればGistから自動読込
+  if(!getToken()){
+    openSyncPanel();
+  } else if(getGistId()){
+    gistLoad();
+  }
 })();
 </script>
 </body>
