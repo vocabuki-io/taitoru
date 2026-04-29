@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>タイテメーカー</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500&display=swap');
+:root {
+  --bg:#0d0d0d; --s1:#181818; --s2:#222; --s3:#2c2c2c;
+  --b1:#2a2a2a; --b2:#3a3a3a;
+  --t1:#f0f0f0; --t2:#7a7a7a; --t3:#3e3e3e;
+  --acc:#c8ff00; --acc-d:rgba(200,255,0,.10);
+  --red:#ff4444; --red-d:rgba(255,68,68,.12);
+  --mono:'IBM Plex Mono',monospace; --sans:'Noto Sans JP',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--t1);font-family:var(--sans);max-width:480px;margin:0 auto;min-height:100vh}
+
+/* Header */
+.hdr{padding:14px 14px 10px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:10px}
+.logo{font-family:var(--mono);font-size:11px;color:var(--acc);letter-spacing:.1em;flex-shrink:0}
+.ev-name{font-size:13px;color:var(--t2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:1px solid var(--b1)}
+.tab{flex:1;padding:10px 0;text-align:center;font-family:var(--mono);font-size:11px;color:var(--t2);cursor:pointer;letter-spacing:.05em;border-bottom:2px solid transparent;transition:color .12s,border-color .12s}
+.tab.on{color:var(--acc);border-bottom-color:var(--acc)}
+
+/* Pages */
+.pg{display:none;padding:13px 13px 40px}
+.pg.on{display:block}
+
+/* Label */
+.lbl{font-family:var(--mono);font-size:10px;color:var(--t3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px}
+.hint{font-family:var(--mono);font-size:10px;color:var(--t3);line-height:1.65;margin-bottom:10px}
+
+/* Pool */
+.pool{display:flex;flex-wrap:wrap;gap:5px;padding:9px;background:var(--s1);border:1px solid var(--b1);border-radius:8px;margin-bottom:13px;min-height:42px}
+.pchip{display:inline-flex;align-items:center;padding:4px 10px;background:var(--s2);border:1px solid var(--b2);border-radius:16px;font-size:13px;color:var(--t1);cursor:grab;user-select:none;touch-action:none;transition:opacity .1s}
+.pchip.dg{opacity:.25}
+
+/* Progress */
+.prow{display:flex;justify-content:space-between;margin-bottom:4px}
+.plbl{font-family:var(--mono);font-size:11px;color:var(--t2)}
+.ppct{font-family:var(--mono);font-size:11px;color:var(--acc)}
+.pbar{height:2px;background:var(--b1);border-radius:2px;margin-bottom:12px;overflow:hidden}
+.pfill{height:100%;background:var(--acc);border-radius:2px;transition:width .3s}
+
+/* Actions */
+.arow{display:flex;gap:6px;margin-bottom:11px}
+.btn{padding:7px 13px;border:1px solid var(--b2);border-radius:6px;background:transparent;color:var(--t1);font-size:12px;cursor:pointer;font-family:var(--mono);letter-spacing:.04em;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+.btn:active{transform:scale(.97)}
+.btn-a{border-color:var(--acc);color:var(--acc)}
+.btn-a:hover{background:var(--acc-d)}
+
+/* ======= SLOT CARD ======= */
+/*
+Layout:  [::] [P1] [(B2B)] [P2] [TIME] [X]
+         drag  chip  toggle  chip  time  clear
+*/
+.slot{
+  display:flex;
+  align-items:center;
+  gap:0;
+  background:var(--s1);
+  border:1px solid var(--b1);
+  border-radius:9px;
+  margin-bottom:5px;
+  min-height:46px;
+  overflow:visible;
+  transition:border-color .12s,background .12s;
+  position:relative;
+}
+.slot.dg-over{border-color:var(--acc);background:var(--acc-d)}
+.slot.dg-slot{opacity:.3}
+
+/* Drag handle */
+.sh{
+  width:26px;height:100%;min-height:46px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:grab;flex-shrink:0;
+  color:var(--t3);font-size:12px;
+  border-right:1px solid var(--b1);
+  background:var(--s2);
+  border-radius:8px 0 0 8px;
+  touch-action:none;user-select:none;
+}
+.sh:hover{color:var(--t2)}
+
+/* Inner flex row */
+.si{
+  flex:1;
+  display:flex;
+  align-items:center;
+  gap:0;
+  padding:0 6px 0 9px;
+  min-width:0;
+  overflow:hidden;
+}
+/* Performer section — sits to the right of time, left-aligned */
+.si-perfs{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+}
+
+/* Performer chip inside slot */
+.sc{
+  display:inline-flex;align-items:center;
+  padding:4px 10px;
+  background:var(--s3);
+  border:1px solid var(--b2);
+  border-radius:14px;
+  font-size:13px;font-weight:500;
+  color:var(--t1);
+  cursor:grab;user-select:none;touch-action:none;
+  white-space:nowrap;
+  flex-shrink:0;
+  transition:border-color .1s,opacity .1s;
+}
+.sc.dg{opacity:.25}
+.sc.dg-p{border-color:var(--acc);background:var(--acc-d)}
+
+/* B2B toggle button */
+.b2b-btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:3px 7px;
+  border:1px solid var(--b2);
+  border-radius:5px;
+  background:transparent;
+  color:var(--t2);
+  font-family:var(--mono);
+  font-size:10px;letter-spacing:.04em;
+  cursor:pointer;
+  flex-shrink:0;
+  white-space:nowrap;
+  transition:border-color .1s,color .1s,background .1s;
+}
+.b2b-btn:hover{border-color:var(--acc);color:var(--acc)}
+.b2b-btn.on{border-color:var(--acc);color:var(--acc);background:var(--acc-d)}
+.b2b-btn:disabled{opacity:.28;cursor:default;pointer-events:none}
+
+/* Empty slot placeholder */
+.s-empty{font-size:12px;color:var(--t3);white-space:nowrap}
+
+/* Time label — fixed width left block, independent of performer names */
+.s-time{
+  font-family:var(--mono);font-size:11px;color:var(--t2);
+  flex-shrink:0;
+  white-space:nowrap;
+  width:52px;
+  text-align:left;
+}
+/* Tilde suffix after time */
+.s-time-tilde{
+  color:var(--t3);
+  letter-spacing:-.5px;
+}
+
+/* Clear button */
+.s-clr{
+  width:28px;height:28px;
+  display:flex;align-items:center;justify-content:center;
+  border:none;background:transparent;
+  cursor:pointer;flex-shrink:0;
+  margin-right:4px;margin-left:4px;
+  border-radius:50%;
+  color:var(--t3);font-size:16px;line-height:1;
+  transition:background .1s,color .1s;
+}
+.s-clr:hover{background:var(--red-d);color:var(--red)}
+
+/* Settings fields */
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld label{font-size:11px;color:var(--t2);font-family:var(--mono)}
+.fld input{font-size:14px;padding:8px 10px;border:1px solid var(--b2);border-radius:6px;background:var(--s1);color:var(--t1);width:100%;font-family:var(--sans)}
+.fld input:focus{outline:none;border-color:var(--acc)}
+.add-r{display:flex;gap:6px;margin-bottom:13px}
+.add-r input{flex:1;font-size:14px;padding:8px 10px;border:1px solid var(--b2);border-radius:6px;background:var(--s1);color:var(--t1);font-family:var(--sans)}
+.add-r input:focus{outline:none;border-color:var(--acc)}
+.pm-list{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:16px}
+.pm-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:var(--s1);border:1px solid var(--b2);border-radius:16px;font-size:13px;color:var(--t1)}
+.pm-x{cursor:pointer;color:var(--t3);font-size:14px;line-height:1}
+.pm-x:hover{color:var(--red)}
+
+/* Output */
+.out-box{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:13px;font-family:var(--mono);font-size:13px;line-height:2.1;white-space:pre;overflow-x:auto;margin-bottom:11px}
+.cp-btn{width:100%;padding:12px;background:var(--acc);color:#000;border:none;border-radius:8px;font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.08em;cursor:pointer}
+.cp-btn:active{opacity:.8}
+
+/* Saved events list */
+.ev-card{display:flex;align-items:center;gap:8px;padding:11px 12px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;margin-bottom:6px;cursor:pointer;transition:border-color .12s,background .12s}
+.ev-card:hover{border-color:var(--b2);background:var(--s2)}
+.ev-card.active-ev{border-color:var(--acc);background:var(--acc-d)}
+.ev-card-name{flex:1;font-size:14px;font-weight:500;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev-card-meta{font-family:var(--mono);font-size:10px;color:var(--t3);white-space:nowrap;margin-right:2px}
+.ev-del{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;cursor:pointer;border-radius:50%;color:var(--t3);font-size:15px;line-height:1;flex-shrink:0;transition:background .1s,color .1s}
+.ev-del:hover{background:var(--red-d);color:var(--red)}
+.new-ev-row{display:flex;gap:6px;margin-bottom:14px}
+.new-ev-row input{flex:1;font-size:14px;padding:8px 10px;border:1px solid var(--b2);border-radius:6px;background:var(--s1);color:var(--t1);font-family:var(--sans)}
+.new-ev-row input:focus{outline:none;border-color:var(--acc)}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <span class="logo">TAITORU</span>
+  <span class="ev-name" id="evName">—</span>
+</div>
+<div class="tabs">
+  <div class="tab on" onclick="goTab('list')">イベント</div>
+  <div class="tab" onclick="goTab('edit')">タイテ</div>
+  <div class="tab" onclick="goTab('settings')">設定</div>
+  <div class="tab" onclick="goTab('output')">出力</div>
+</div>
+
+<!-- LIST -->
+<div id="pg-list" class="pg on">
+  <div class="lbl">新規イベント作成</div>
+  <div class="new-ev-row">
+    <input type="text" id="newEvName" placeholder="イベント名を入力..." onkeydown="if(event.key==='Enter')createEv()">
+    <button class="btn btn-a" onclick="createEv()">作成</button>
+  </div>
+  <div class="lbl">保存済みイベント</div>
+  <div id="evList"></div>
+</div>
+
+<!-- EDIT -->
+<div id="pg-edit" class="pg">
+  <div class="lbl">演者プール（未割当）</div>
+  <div class="pool" id="pool"></div>
+  <div class="arow">
+    <button class="btn btn-a" onclick="rndAll()">ランダム</button>
+    <button class="btn" onclick="clrAll()">全クリア</button>
+  </div>
+  <div class="prow">
+    <span class="plbl" id="plbl">—</span>
+    <span class="ppct" id="ppct">0%</span>
+  </div>
+  <div class="pbar"><div class="pfill" id="pfill" style="width:0%"></div></div>
+  <div class="lbl">タイムテーブル</div>
+  <div class="hint">::  → 枠ごと並替　　演者名 → 演者だけ入替</div>
+  <div id="slist"></div>
+</div>
+
+<!-- SETTINGS -->
+<div id="pg-settings" class="pg">
+  <div class="lbl">イベント設定</div>
+  <div class="sg">
+    <div class="fld" style="grid-column:1/-1">
+      <label>イベント名</label>
+      <input type="text" id="sName" value="決起酒会 GW" oninput="updHdr()">
+    </div>
+    <div class="fld"><label>開始時間</label><input type="time" id="sStart" value="00:00" onchange="rebuild()"></div>
+    <div class="fld"><label>終了時間</label><input type="time" id="sEnd" value="03:30" onchange="rebuild()"></div>
+    <div class="fld"><label>1枠（分）</label><input type="number" id="sMin" value="30" min="15" max="120" step="15" onchange="rebuild()"></div>
+  </div>
+  <div class="lbl" style="margin-top:14px">演者追加</div>
+  <div class="add-r" style="flex-direction:column;gap:6px">
+    <textarea id="addN" placeholder="演者名を入力（スペース・改行・カンマで複数一括追加）" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addP();}" rows="2" style="width:100%;font-size:13px;padding:8px 10px;border:1px solid var(--b2);border-radius:6px;background:var(--s1);color:var(--t1);font-family:var(--sans);resize:none;line-height:1.5"></textarea>
+    <button class="btn" onclick="addP()" style="align-self:flex-end">追加</button>
+  </div>
+  <div class="lbl">登録済み演者</div>
+  <div class="pm-list" id="pml"></div>
+</div>
+
+<!-- OUTPUT -->
+<div id="pg-output" class="pg">
+  <div class="lbl">コピー用テキスト</div>
+  <div class="out-box" id="outbox">—</div>
+  <button class="cp-btn" onclick="cpOut()">テキストをコピー</button>
+</div>
+
+<script>
+let events=[]; // [{id, name, start, end, slotMin, perfs[], slots[]}]
+let curEvId=null;
+
+// Shortcuts to current event data
+const curEv=()=>events.find(e=>e.id===curEvId)||null;
+let perfs=[];
+let slots=[];
+
+/* ---- Helpers ---- */
+const pt=s=>{const[h,m]=s.split(':').map(Number);return h*60+m;};
+const ft=m=>{const t=((m%1440)+1440)%1440;return`${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`;};
+const uid=()=>Math.random().toString(36).slice(2,9);
+
+function updHdr(){document.getElementById('evName').textContent=document.getElementById('sName').value.trim()||'—';}
+
+function syncCurToEvent(){
+  const ev=curEv();if(!ev)return;
+  ev.name=document.getElementById('sName').value.trim()||ev.name;
+  ev.perfs=[...perfs];
+  ev.slots=slots.map(s=>({...s,perfs:[...s.perfs]}));
+  ev.start=document.getElementById('sStart').value;
+  ev.end=document.getElementById('sEnd').value;
+  ev.slotMin=parseInt(document.getElementById('sMin').value)||30;
+}
+
+function loadEventIntoUI(ev){
+  curEvId=ev.id;
+  perfs=[...ev.perfs];
+  slots=ev.slots.map(s=>({...s,perfs:[...s.perfs]}));
+  document.getElementById('sName').value=ev.name;
+  document.getElementById('sStart').value=ev.start;
+  document.getElementById('sEnd').value=ev.end;
+  document.getElementById('sMin').value=ev.slotMin;
+  updHdr();rSlots();rPool();
+}
+
+function rebuild(){
+  const st=pt(document.getElementById('sStart').value);
+  let en=pt(document.getElementById('sEnd').value);
+  const sm=parseInt(document.getElementById('sMin').value)||30;
+  if(en<=st)en+=1440;
+  const n=Math.floor((en-st)/sm);
+  const old=slots.slice();
+  slots=Array.from({length:n},(_,i)=>({start:st+i*sm,b2b:old[i]?.b2b??true,perfs:old[i]?.perfs||[]}));
+  syncCurToEvent();
+  rSlots();rPool();
+}
+
+/* ---- Tabs ---- */
+const ALL_TABS=['list','edit','settings','output'];
+function goTab(t){
+  if(t!=='list')syncCurToEvent();
+  ALL_TABS.forEach(x=>{
+    const p=document.getElementById('pg-'+x);
+    if(p){p.style.display='none';p.classList.remove('on');}
+  });
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('on',ALL_TABS[i]===t));
+  const pg=document.getElementById('pg-'+t);
+  if(pg){pg.style.display='block';pg.classList.add('on');}
+  if(t==='output')rOut();
+  if(t==='settings')rPml();
+  if(t==='list'){syncCurToEvent();rEvList();}
+}
+
+/* ---- Event list ---- */
+function createEv(){
+  const inp=document.getElementById('newEvName');
+  const name=inp.value.trim();
+  if(!name)return;
+  const ev={
+    id:uid(),name,
+    start:'00:00',end:'03:30',slotMin:30,
+    perfs:[],
+    slots:[]
+  };
+  // auto-build slots
+  const st=pt(ev.start);let en=pt(ev.end);if(en<=st)en+=1440;
+  const n=Math.floor((en-st)/ev.slotMin);
+  ev.slots=Array.from({length:n},(_,i)=>({start:st+i*ev.slotMin,b2b:true,perfs:[]}));
+  events.push(ev);
+  inp.value='';
+  openEv(ev.id);
+}
+
+function openEv(id){
+  syncCurToEvent();
+  const ev=events.find(e=>e.id===id);
+  if(!ev)return;
+  loadEventIntoUI(ev);
+  goTab('edit');
+}
+
+function deleteEv(id,e){
+  e.stopPropagation();
+  if(!confirm('このイベントを削除しますか？'))return;
+  events=events.filter(ev=>ev.id!==id);
+  if(curEvId===id){
+    curEvId=null;perfs=[];slots=[];
+    document.getElementById('sName').value='';
+    document.getElementById('evName').textContent='—';
+  }
+  rEvList();
+}
+
+function rEvList(){
+  const el=document.getElementById('evList');
+  if(!events.length){
+    el.innerHTML='<p style="font-size:12px;color:var(--t3);text-align:center;padding:24px 0;font-family:var(--mono)">イベントがありません</p>';
+    return;
+  }
+  el.innerHTML=events.map(ev=>{
+    const slotCount=ev.slots.length;
+    const assigned=ev.slots.filter(s=>s.perfs.length>0).length;
+    const active=ev.id===curEvId?'active-ev':'';
+    return`<div class="ev-card ${active}" onclick="openEv('${ev.id}')">
+      <div class="ev-card-name">${ev.name}</div>
+      <span class="ev-card-meta">${assigned}/${slotCount}枠</span>
+      <button class="ev-del" onclick="deleteEv('${ev.id}',event)" title="削除">×</button>
+    </div>`;
+  }).join('');
+}
+
+/* ---- Performers ---- */
+function addP(){
+  const inp=document.getElementById('addN');
+  const raw=inp.value;
+  if(!raw.trim())return;
+  // スペース・改行・カンマ区切りで複数一括追加
+  const names=raw.split(/[\s,\n]+/).map(n=>n.trim()).filter(n=>n.length>0);
+  let added=0;
+  names.forEach(n=>{
+    if(!perfs.includes(n)){perfs.push(n);added++;}
+  });
+  inp.value='';
+  if(added>0){syncCurToEvent();rPool();rPml();}
+}
+function delP(name){
+  perfs=perfs.filter(p=>p!==name);
+  slots.forEach(s=>{s.perfs=s.perfs.filter(p=>p!==name);});
+  syncCurToEvent();rPool();rSlots();rPml();
+}
+function rPml(){
+  document.getElementById('pml').innerHTML=perfs.map(p=>
+    `<div class="pm-chip">${p}<span class="pm-x" onclick="delP('${p}')">×</span></div>`
+  ).join('');
+}
+
+/* ---- Pool ---- */
+const asgd=()=>new Set(slots.flatMap(s=>s.perfs));
+function rPool(){
+  const el=document.getElementById('pool');
+  const un=perfs.filter(p=>!asgd().has(p));
+  if(!un.length){el.innerHTML='<span style="font-size:12px;color:var(--t3);font-family:var(--mono)">全員割当済み ✓</span>';updProg();return;}
+  el.innerHTML=un.map(p=>`<div class="pchip" draggable="true" data-p="${p}" ondragstart="dPerfStart(event,'${p}',true,null)" ondragend="dPerfEnd()">${p}</div>`).join('');
+  el.querySelectorAll('.pchip').forEach(c=>c.addEventListener('touchstart',e=>tPerfStart(e,c.dataset.p,c,true),{passive:false}));
+  updProg();
+}
+function updProg(){
+  const tot=perfs.length,un=perfs.filter(p=>!asgd().has(p)).length;
+  const pct=tot?Math.round((tot-un)/tot*100):0;
+  document.getElementById('plbl').textContent=un===0?'全員割当済み':`未割当 ${un}人`;
+  document.getElementById('ppct').textContent=pct+'%';
+  document.getElementById('pfill').style.width=pct+'%';
+}
+
+/* ---- Render slots ---- */
+function trunc(name){return name.length>6?name.slice(0,6)+'…':name;}
+
+function rSlots(){
+  const list=document.getElementById('slist');
+  if(!slots.length){list.innerHTML='<p style="font-size:12px;color:var(--t3);text-align:center;padding:20px 0;font-family:var(--mono)">設定タブで時間を入力してください</p>';return;}
+  list.innerHTML=slots.map((s,i)=>slotHTML(s,i)).join('');
+  slots.forEach((_,i)=>{
+    const h=document.getElementById('sh-'+i);
+    if(h)h.addEventListener('touchstart',e=>tSlotStart(e,i),{passive:false});
+    const el=document.getElementById('slot-'+i);
+    if(el)el.querySelectorAll('.sc').forEach(c=>c.addEventListener('touchstart',e=>tPerfStart(e,c.dataset.p,c,false),{passive:false}));
+  });
+  updProg();
+}
+
+function slotHTML(s,i){
+  const p0=s.perfs[0]||null;
+  const p1=s.perfs[1]||null;
+  const b2bOn=s.b2b?'on':'';
+  const hasClear=s.perfs.length>0;
+  let perfSection='';
+  if(!p0){
+    perfSection=`<span class="s-empty">ドロップして割当</span>`;
+  } else {
+    const d0=trunc(p0);
+    perfSection=`<div class="sc" draggable="true" data-p="${p0}" data-si="${i}" ondragstart="dPerfStart(event,'${p0}',false,${i})" ondragend="dPerfEnd()" title="${p0}">${d0}</div>`;
+    perfSection+=`<button class="b2b-btn ${b2bOn}" onclick="togB2B(${i})" title="B2B切替">B2B</button>`;
+    if(s.b2b){
+      if(p1){
+        const d1=trunc(p1);
+        perfSection+=`<div class="sc" draggable="true" data-p="${p1}" data-si="${i}" ondragstart="dPerfStart(event,'${p1}',false,${i})" ondragend="dPerfEnd()" title="${p1}">${d1}</div>`;
+      } else {
+        perfSection+=`<span class="s-empty" style="font-size:11px">+1人</span>`;
+      }
+    }
+  }
+  return`<div class="slot" id="slot-${i}"
+    ondragover="dSlotOver(event,${i})"
+    ondrop="dSlotDrop(event,${i})"
+    ondragleave="dSlotLeave(event,${i})">
+    <div class="sh" id="sh-${i}" draggable="true"
+      ondragstart="dSlotStart(event,${i})"
+      ondragend="dSlotEnd()">⠿</div>
+    <div class="si">
+      <span class="s-time">${ft(s.start)}<span class="s-time-tilde">〜</span></span>
+      <div class="si-perfs">${perfSection}</div>
+    </div>
+    ${hasClear?`<button class="s-clr" onclick="clrSlot(${i})" title="クリア">×</button>`:'<span style="width:36px;flex-shrink:0"></span>'}
+  </div>`;
+}
+
+function togB2B(i){
+  slots[i].b2b=!slots[i].b2b;
+  if(!slots[i].b2b&&slots[i].perfs.length>1)slots[i].perfs=slots[i].perfs.slice(0,1);
+  syncCurToEvent();rSlots();rPool();
+}
+function clrSlot(i){slots[i].perfs=[];syncCurToEvent();rSlots();rPool();}
+function clrAll(){slots.forEach(s=>s.perfs=[]);syncCurToEvent();rSlots();rPool();}
+function rndAll(){
+  const names=[...perfs];
+  for(let i=names.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[names[i],names[j]]=[names[j],names[i]];}
+  let idx=0;
+  slots.forEach(s=>{const n=s.b2b?2:1;s.perfs=names.slice(idx,idx+n).filter(Boolean);idx+=n;});
+  syncCurToEvent();rSlots();rPool();
+}
+
+/* ---- Mouse drag ---- */
+let dP=null,dPPool=true,dPSI=null,dSI=null;
+function dPerfStart(e,name,fromPool,si){
+  dP=name;dPPool=fromPool;dPSI=si;
+  e.dataTransfer.effectAllowed='move';
+  setTimeout(()=>{
+    if(fromPool)document.querySelector(`.pchip[data-p="${name}"]`)?.classList.add('dg');
+    else document.querySelector(`#slot-${si} .sc[data-p="${name}"]`)?.classList.add('dg');
+  },0);
+}
+function dPerfEnd(){
+  document.querySelectorAll('.pchip.dg,.sc.dg,.sc.dg-p').forEach(el=>el.classList.remove('dg','dg-p'));
+  dP=null;
+}
+function dSlotStart(e,i){
+  if(dP){e.preventDefault();return;}
+  dSI=i;e.dataTransfer.effectAllowed='move';
+  setTimeout(()=>document.getElementById('slot-'+i)?.classList.add('dg-slot'),0);
+}
+function dSlotEnd(){
+  document.querySelectorAll('.slot.dg-slot,.slot.dg-over').forEach(el=>el.classList.remove('dg-slot','dg-over'));
+  dSI=null;
+}
+function dSlotOver(e,i){
+  e.preventDefault();
+  document.querySelectorAll('.slot.dg-over').forEach(el=>el.classList.remove('dg-over'));
+  document.getElementById('slot-'+i)?.classList.add('dg-over');
+  if(dP&&!dPPool){
+    document.querySelectorAll('.sc.dg-p').forEach(el=>el.classList.remove('dg-p'));
+    const ov=document.elementFromPoint(e.clientX,e.clientY);
+    const c=ov?.closest('.sc');
+    if(c&&c.dataset.p!==dP)c.classList.add('dg-p');
+  }
+}
+function dSlotLeave(e,i){
+  if(!e.currentTarget.contains(e.relatedTarget))document.getElementById('slot-'+i)?.classList.remove('dg-over');
+}
+function dSlotDrop(e,i){
+  e.preventDefault();
+  document.querySelectorAll('.slot.dg-over,.sc.dg-p').forEach(el=>el.classList.remove('dg-over','dg-p'));
+  if(dP){
+    const ov=document.elementFromPoint(e.clientX,e.clientY);
+    const tc=ov?.closest('.sc');
+    if(tc&&tc.dataset.p!==dP){swapP(dP,dPPool?null:dPSI,tc.dataset.p,parseInt(tc.dataset.si));}
+    else{assignP(dP,dPPool?null:dPSI,i);}
+    dP=null;return;
+  }
+  if(dSI!==null&&dSI!==i){
+    const tmpPerfs=slots[dSI].perfs; const tmpB2b=slots[dSI].b2b;
+    slots[dSI].perfs=slots[i].perfs; slots[dSI].b2b=slots[i].b2b;
+    slots[i].perfs=tmpPerfs; slots[i].b2b=tmpB2b;
+    dSI=null;syncCurToEvent();rSlots();rPool();
+  }
+}
+function assignP(name,fromSI,toSI){
+  const max=slots[toSI].b2b?2:1;
+  if(slots[toSI].perfs.includes(name)||slots[toSI].perfs.length>=max)return;
+  if(fromSI!==null)slots[fromSI].perfs=slots[fromSI].perfs.filter(p=>p!==name);
+  slots[toSI].perfs.push(name);
+  syncCurToEvent();rSlots();rPool();
+}
+function swapP(nameA,siA,nameB,siB){
+  if(siA===null){
+    const ib=slots[siB].perfs.indexOf(nameB);
+    if(ib>=0)slots[siB].perfs[ib]=nameA;
+  } else if(siA===siB){
+    const arr=slots[siA].perfs;
+    const ia=arr.indexOf(nameA),ib=arr.indexOf(nameB);
+    if(ia>=0&&ib>=0)[arr[ia],arr[ib]]=[arr[ib],arr[ia]];
+  } else {
+    const ia=slots[siA].perfs.indexOf(nameA);
+    const ib=slots[siB].perfs.indexOf(nameB);
+    if(ia>=0)slots[siA].perfs[ia]=nameB;
+    if(ib>=0)slots[siB].perfs[ib]=nameA;
+  }
+  syncCurToEvent();rSlots();rPool();
+}
+
+/* ---- Touch drag ---- */
+let tP=null,tPPool=true,tPSI=null,tSI=null,tGhost=null;
+function mkG(el){
+  const g=el.cloneNode(true);
+  Object.assign(g.style,{position:'fixed',pointerEvents:'none',zIndex:'9999',opacity:'.85',transform:'scale(1.06)'});
+  document.body.appendChild(g);return g;
+}
+function rmG(){if(tGhost){tGhost.remove();tGhost=null;}}
+function mvG(x,y){if(tGhost){tGhost.style.left=(x-55)+'px';tGhost.style.top=(y-16)+'px';}}
+function tPerfStart(e,name,chip,fromPool){
+  e.preventDefault();tP=name;tPPool=fromPool;
+  tPSI=fromPool?null:parseInt(chip.dataset.si??'-1');
+  if(tPSI===-1)tPSI=null;
+  tGhost=mkG(chip);const t=e.touches[0];mvG(t.clientX,t.clientY);
+  document.addEventListener('touchmove',tPerfMove,{passive:false});
+  document.addEventListener('touchend',tPerfEnd,{once:true});
+}
+function tPerfMove(e){
+  e.preventDefault();const t=e.touches[0];mvG(t.clientX,t.clientY);
+  document.querySelectorAll('.slot.dg-over,.sc.dg-p').forEach(el=>el.classList.remove('dg-over','dg-p'));
+  const ov=document.elementFromPoint(t.clientX,t.clientY);
+  ov?.closest('.slot')?.classList.add('dg-over');
+  const c=ov?.closest('.sc');if(c&&c.dataset.p!==tP)c.classList.add('dg-p');
+}
+function tPerfEnd(e){
+  document.removeEventListener('touchmove',tPerfMove);rmG();
+  document.querySelectorAll('.slot.dg-over,.sc.dg-p').forEach(el=>el.classList.remove('dg-over','dg-p'));
+  const t=e.changedTouches[0];
+  const ov=document.elementFromPoint(t.clientX,t.clientY);
+  const tc=ov?.closest('.sc'),ts=ov?.closest('.slot');
+  if(tc&&tc.dataset.p!==tP){swapP(tP,tPPool?null:tPSI,tc.dataset.p,parseInt(tc.dataset.si));}
+  else if(ts){assignP(tP,tPPool?null:tPSI,parseInt(ts.id.replace('slot-','')));}
+  tP=null;
+}
+function tSlotStart(e,i){
+  if(tP)return;e.preventDefault();tSI=i;
+  const el=document.getElementById('slot-'+i);
+  tGhost=mkG(el);tGhost.style.width=el.offsetWidth+'px';
+  tGhost.style.left=el.getBoundingClientRect().left+'px';
+  tGhost.style.top=(e.touches[0].clientY-23)+'px';
+  document.addEventListener('touchmove',tSlotMove,{passive:false});
+  document.addEventListener('touchend',tSlotEnd,{once:true});
+}
+function tSlotMove(e){
+  e.preventDefault();if(tGhost)tGhost.style.top=(e.touches[0].clientY-23)+'px';
+  document.querySelectorAll('.slot.dg-over').forEach(el=>el.classList.remove('dg-over'));
+  const ov=document.elementFromPoint(e.touches[0].clientX,e.touches[0].clientY);
+  const s=ov?.closest('.slot');if(s&&s.id!=='slot-'+tSI)s.classList.add('dg-over');
+}
+function tSlotEnd(e){
+  document.removeEventListener('touchmove',tSlotMove);rmG();
+  document.querySelectorAll('.slot.dg-over').forEach(el=>el.classList.remove('dg-over'));
+  const ov=document.elementFromPoint(e.changedTouches[0].clientX,e.changedTouches[0].clientY);
+  const s=ov?.closest('.slot');
+  if(s&&tSI!==null){
+    const j=parseInt(s.id.replace('slot-',''));
+    if(!isNaN(j)&&j!==tSI){
+      const tmpPerfs=slots[tSI].perfs; const tmpB2b=slots[tSI].b2b;
+      slots[tSI].perfs=slots[j].perfs; slots[tSI].b2b=slots[j].b2b;
+      slots[j].perfs=tmpPerfs; slots[j].b2b=tmpB2b;
+      syncCurToEvent();rSlots();rPool();
+    }
+  }
+  tSI=null;
+}
+
+/* ---- Output ---- */
+function rOut(){
+  const ev=curEv();
+  const name=ev?.name||document.getElementById('sName').value.trim()||'イベント';
+  const lines=[`【${name} タイムテーブル】\n`];
+  slots.forEach(s=>lines.push(`${ft(s.start)}  ${s.perfs.length?s.perfs.join(' B2B '):'—'}`));
+  document.getElementById('outbox').innerHTML=lines.map((l,i)=>{
+    if(i===0)return`<span style="color:var(--acc)">${l}</span>`;
+    const sp=l.indexOf('  ');
+    return`<span style="color:var(--acc)">${l.slice(0,sp)}</span>${l.slice(sp)}`;
+  }).join('\n');
+}
+function cpOut(){
+  const ev=curEv();
+  const name=ev?.name||document.getElementById('sName').value.trim()||'イベント';
+  const lines=[`【${name} タイムテーブル】\n`];
+  slots.forEach(s=>lines.push(`${ft(s.start)}  ${s.perfs.length?s.perfs.join(' B2B '):'—'}`));
+  navigator.clipboard.writeText(lines.join('\n')).then(()=>{
+    const b=document.querySelector('.cp-btn');
+    b.textContent='コピーしました ✓';setTimeout(()=>b.textContent='テキストをコピー',2000);
+  });
+}
+
+/* ---- Init ---- */
+// 決起酒会をデフォルトで1件作成
+(function(){
+  const ev={
+    id:uid(),name:'決起酒会 GW',
+    start:'00:00',end:'03:30',slotMin:30,
+    perfs:['ゆや','nora','Jinx','ライチ','なぴ','mosoup','うらぴー','けあ','にや','ゆめ','えりふら','ぽめ丸','イヌザキ','あぼがど','あゆむ','乃々瀬','иASU','dragon3'],
+    slots:[]
+  };
+  const st=pt(ev.start);let en=pt(ev.end);if(en<=st)en+=1440;
+  const n=Math.floor((en-st)/ev.slotMin);
+  ev.slots=Array.from({length:n},(_,i)=>({start:st+i*ev.slotMin,b2b:true,perfs:[]}));
+  events.push(ev);
+  rEvList();
+})();
+</script>
+</body>
+</html>
